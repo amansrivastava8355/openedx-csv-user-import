@@ -1,0 +1,4 @@
+email,course_id
+alice.student@university.edu,course-v1:OpenedX+DemoX+DemoCourse
+bob.student@university.edu,course-v1:OpenedX+DemoX+DemoCourse
+carol.faculty@university.edu,course-v1:OpenedX+DemoX+DemoCourse

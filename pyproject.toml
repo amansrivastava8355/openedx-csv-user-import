@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openedx-csv-user-import"
+version = "0.2.0"
+description = "Open edX Django app + Tutor plugin to bulk-create students from CSV, enroll them in courses, and send password-reset emails"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "AGPL-3.0-only" }
+authors = [
+    { name = "Open edX Community" },
+]
+keywords = ["openedx", "tutor", "csv", "users", "password-reset"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Django",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "Django>=4.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-django",
+]
+
+[project.urls]
+Homepage = "https://github.com/openedx/openedx-csv-user-import"
+Documentation = "https://github.com/openedx/openedx-csv-user-import#readme"
+Repository = "https://github.com/openedx/openedx-csv-user-import"
+
+[project.entry-points."lms.djangoapp"]
+openedx_csv_user_import = "openedx_csv_user_import.apps:CsvUserImportConfig"
+
+[project.entry-points."cms.djangoapp"]
+openedx_csv_user_import = "openedx_csv_user_import.apps:CsvUserImportConfig"
+
+[project.entry-points."tutor.plugin.v1"]
+csv-user-import = "tutorcsvuserimport.plugin"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+openedx_csv_user_import = ["templates/**/*", "static/**/*"]

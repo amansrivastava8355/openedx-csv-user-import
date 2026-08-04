@@ -1,0 +1,276 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% trans "CSV Student Import" %}</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --ink: #1c2430;
+      --accent: #0b6e4f;
+      --card: #ffffff;
+      --muted: #5b6573;
+      --border: #d7d2c8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Source Sans 3", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(11, 110, 79, 0.12), transparent 40%),
+        linear-gradient(180deg, #f8f6f1 0%, var(--bg) 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 48px 20px 80px;
+    }
+    h1 {
+      font-family: "Libre Baskerville", Georgia, serif;
+      font-weight: 700;
+      font-size: 2.2rem;
+      margin: 0 0 8px;
+    }
+    .lede {
+      color: var(--muted);
+      margin-bottom: 28px;
+      max-width: 60ch;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin: 14px 0 6px;
+    }
+    input[type="file"],
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: inherit;
+    }
+    .checks label {
+      font-weight: 500;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 10px 0;
+    }
+    button[type="submit"] {
+      margin-top: 18px;
+      background: var(--accent);
+      color: white;
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 22px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button[type="submit"]:hover { filter: brightness(1.05); }
+    button[type="submit"]:disabled {
+      opacity: 0.7;
+      cursor: wait;
+      filter: none;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .messages {
+      list-style: none;
+      padding: 0;
+    }
+    .messages li {
+      background: #e7f6ef;
+      border: 1px solid #b7e0cc;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    code { background: #efebe3; padding: 2px 6px; border-radius: 6px; }
+    .hint { color: var(--muted); margin-top: 18px; line-height: 1.45; }
+
+    /* Full-page loader overlay */
+    .upload-loader {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(28, 36, 48, 0.55);
+      backdrop-filter: blur(2px);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .upload-loader.is-visible {
+      display: flex;
+    }
+    .upload-loader__card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 36px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 18px 50px rgba(28, 36, 48, 0.18);
+    }
+    .upload-loader__spinner {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 18px;
+      border: 4px solid #d7e8df;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+    }
+    .upload-loader__title {
+      font-family: "Libre Baskerville", Georgia, serif;
+      font-size: 1.35rem;
+      margin: 0 0 8px;
+    }
+    .upload-loader__text {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div
+    id="upload-loader"
+    class="upload-loader"
+    hidden
+    role="status"
+    aria-live="polite"
+    aria-busy="false"
+  >
+    <div class="upload-loader__card">
+      <div class="upload-loader__spinner" aria-hidden="true"></div>
+      <h2 class="upload-loader__title">{% trans "Importing students…" %}</h2>
+      <p class="upload-loader__text">
+        {% trans "Please wait. Creating accounts, enrolling courses, and sending password-reset emails can take a few minutes for larger files. Do not close this page." %}
+      </p>
+    </div>
+  </div>
+
+  <main>
+    <h1>{% trans "CSV Student Import" %}</h1>
+    <p class="lede">
+      {% trans "Upload a CSV of student emails. Optionally include a course ID column to enroll each student. New accounts receive a password-reset email so they can set their own password." %}
+    </p>
+
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <section class="panel">
+      <form id="csv-import-form" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <label for="id_csv_file">{% trans "CSV file" %}</label>
+        {{ form.csv_file }}
+        <label for="id_default_course_id">{% trans "Default course ID (optional)" %}</label>
+        {{ form.default_course_id }}
+        <div class="checks">
+          <label>{{ form.send_reset }} {% trans "Send password reset email to new students" %}</label>
+          <label>{{ form.resend_existing }} {% trans "Also resend reset email to existing users" %}</label>
+          <label>{{ form.enroll_existing }} {% trans "Enroll existing users into the listed courses" %}</label>
+          <label>{{ form.dry_run }} {% trans "Dry run (no writes / no email)" %}</label>
+        </div>
+        <button id="csv-import-submit" type="submit">{% trans "Import students" %}</button>
+      </form>
+      <p class="hint">
+        {% trans "Accepted formats:" %}
+        <code>email,course_id</code> —
+        {% trans "or email only, or multiple courses in one cell separated by" %}
+        <code>;</code>.
+        {% trans "Example course id:" %}
+        <code>course-v1:OpenedX+DemoX+DemoCourse</code>
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2 style="margin-top:0;">{% trans "Recent imports" %}</h2>
+      {% if recent_batches %}
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>{% trans "When" %}</th>
+              <th>{% trans "File" %}</th>
+              <th>{% trans "Created" %}</th>
+              <th>{% trans "Existing" %}</th>
+              <th>{% trans "Enrolled" %}</th>
+              <th>{% trans "Reset" %}</th>
+              <th>{% trans "Invalid" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for batch in recent_batches %}
+              <tr>
+                <td>{{ batch.id }}</td>
+                <td>{{ batch.created_at }}</td>
+                <td>{{ batch.source_filename }}</td>
+                <td>{{ batch.created_count }}</td>
+                <td>{{ batch.skipped_count }}</td>
+                <td>{{ batch.enrolled_count }}</td>
+                <td>{{ batch.reset_sent_count }}</td>
+                <td>{{ batch.invalid_count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p style="color: var(--muted);">{% trans "No imports yet." %}</p>
+      {% endif %}
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var form = document.getElementById("csv-import-form");
+      var loader = document.getElementById("upload-loader");
+      var submitBtn = document.getElementById("csv-import-submit");
+      if (!form || !loader || !submitBtn) {
+        return;
+      }
+
+      form.addEventListener("submit", function () {
+        // Native form validity: if invalid, browser blocks submit and we stay put.
+        if (typeof form.checkValidity === "function" && !form.checkValidity()) {
+          return;
+        }
+        loader.hidden = false;
+        loader.classList.add("is-visible");
+        loader.setAttribute("aria-busy", "true");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "{% trans 'Importing…' %}";
+      });
+    })();
+  </script>
+</body>
+</html>
