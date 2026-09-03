@@ -20,6 +20,10 @@ hooks.Filters.ENV_PATCHES.add_item(
 # openedx-csv-user-import — bulk create students from CSV, enroll, password-reset
 RUN if [ -d /mnt/openedx-csv-user-import ]; then \
       pip install --no-cache-dir /mnt/openedx-csv-user-import ; \
+      if [ -d /mnt/openedx-csv-user-import/email_overrides/user_authn/edx_ace ]; then \
+        cp -a /mnt/openedx-csv-user-import/email_overrides/user_authn/edx_ace/. \
+          /openedx/edx-platform/openedx/core/djangoapps/user_authn/templates/user_authn/edx_ace/ ; \
+      fi ; \
     fi
 """,
     )
