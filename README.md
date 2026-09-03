@@ -39,12 +39,42 @@ tutor local status
 
 ---
 
+## Critical: host plugin ≠ LMS install
+
+Enabling `csv-user-import` on the **Tutor host** only registers the Tutor plugin
+(mounts / dockerfile hooks / `tutor local do` jobs).
+
+The staff UI at `/csv-user-import/` is a **Django LMS app**. It must also be
+`pip install`ed **inside the LMS (and CMS/worker) containers**.
+
+If you only do this on the host:
+
+```bash
+pip install -e /path/to/openedx-csv-user-import
+tutor plugins enable csv-user-import
+tutor mounts add /path/to/openedx-csv-user-import
+tutor config save
+```
+
+…you will still get Open edX **“Page not found”** on `/csv-user-import/` until
+the package is installed in the LMS image/container and LMS is restarted.
+
+| Layer | What it does | Alone enough for UI? |
+|---|---|---|
+| Host: `pip install` + `tutor plugins enable` | Tutor wiring | No |
+| Host: `tutor mounts add` | Makes repo visible at `/mnt/openedx-csv-user-import` | No |
+| LMS: `pip install` the package + restart | Registers Django URLs | **Yes** |
+
+---
+
 ## Installation steps
 
 Replace `/path/to/openedx-csv-user-import` with the real path on your server  
-(example on this machine: `/home/vagrant/openedx/tutor/openedx-csv-user-import`).
+(example: `/root/openedx-csv-user-import` on staging/prod).
 
-### Option A — Recommended for production / rebuild (mount + image build)
+### Option A — Recommended for production (bake into Open edX image)
+
+This survives container recreate. Use this on **prod**.
 
 #### 1. Install the Tutor plugin on the host
 
@@ -54,10 +84,10 @@ Use the **same Python environment** where Tutor is installed:
 pip install -e /path/to/openedx-csv-user-import
 ```
 
-Or from Git (when published):
+Or from Git:
 
 ```bash
-pip install "git+https://github.com/YOUR_ORG/openedx-csv-user-import.git"
+pip install "git+https://github.com/amansrivastava8355/openedx-csv-user-import.git"
 ```
 
 #### 2. Enable the plugin
@@ -73,10 +103,17 @@ You should see:
 csv-user-import   ✅ enabled   0.2.0
 ```
 
-#### 3. Mount the package and add it to the Open edX image
+#### 3. Mount the package (so the image build can install it)
 
 ```bash
 tutor mounts add /path/to/openedx-csv-user-import
+tutor config save
+```
+
+The Tutor plugin dockerfile patch installs from `/mnt/openedx-csv-user-import`
+during `tutor images build openedx`. Optionally also append:
+
+```bash
 tutor config save --append \
   OPENEDX_EXTRA_PIP_REQUIREMENTS=/mnt/openedx-csv-user-import
 tutor config save
@@ -86,11 +123,11 @@ From Git instead of a local mount:
 
 ```bash
 tutor config save --append \
-  OPENEDX_EXTRA_PIP_REQUIREMENTS=git+https://github.com/YOUR_ORG/openedx-csv-user-import.git
+  OPENEDX_EXTRA_PIP_REQUIREMENTS=git+https://github.com/amansrivastava8355/openedx-csv-user-import.git
 tutor config save
 ```
 
-#### 4. Rebuild and restart
+#### 4. Rebuild and restart (required on prod)
 
 ```bash
 tutor images build openedx
@@ -103,52 +140,80 @@ tutor local start -d
 tutor local run lms ./manage.py lms migrate openedx_csv_user_import --noinput
 ```
 
-#### 6. Verify
+#### 6. Verify (do not skip)
 
 ```bash
-# Management command help
-tutor local run lms ./manage.py lms help import_users_csv
+# Package present inside LMS?
+tutor local run lms bash -c \
+  'source /openedx/venv/bin/activate && pip show openedx-csv-user-import'
 
-# Tutor job available?
-tutor local do --help | grep import-users-csv
+# Django URL registered?
+tutor local run lms ./manage.py lms shell -c \
+  'from django.urls import reverse; print(reverse("csv_user_import:import"))'
+
+# Management command available?
+tutor local run lms ./manage.py lms help import_users_csv
 ```
 
-Open the staff UI (sign in as staff first):
+Expected URL print: `/csv-user-import/`
+
+Then open (sign in as **staff** first):
 
 ```text
-http://<LMS_HOST>/csv-user-import/
+https://<LMS_HOST>/csv-user-import/
 ```
-
-Example: `http://local.edly.io/csv-user-import/`
 
 ---
 
 ### Option B — Fast path (already-running LMS, no image rebuild)
 
-Useful for development or quick university testing.
+Useful for staging / quick testing. **Does not survive** a full image rebuild
+unless you also complete Option A later.
+
+If the repo is already mounted (`tutor mounts add` → `/mnt/openedx-csv-user-import`
+inside LMS), install from the mount. Otherwise `docker cp` first.
 
 ```bash
-# 1) Install Tutor plugin on host
+# 1) Host: Tutor plugin
 pip install -e /path/to/openedx-csv-user-import
 tutor plugins enable csv-user-import
+tutor mounts add /path/to/openedx-csv-user-import   # recommended
 tutor config save
+tutor local start -d                                 # pick up mount if new
 
-# 2) Copy package into LMS container
-docker cp /path/to/openedx-csv-user-import tutor_local-lms-1:/openedx/openedx-csv-user-import
+# 2) Install Django app INSIDE LMS + CMS + workers
+for c in tutor_local-lms-1 tutor_local-cms-1 \
+         tutor_local-lms-worker-1 tutor_local-cms-worker-1; do
+  docker exec -u 0 "$c" bash -c \
+    'source /openedx/venv/bin/activate && pip install -e /mnt/openedx-csv-user-import'
+done
 
-# 3) Install inside LMS
-docker exec -u 0 tutor_local-lms-1 bash -c \
-  'source /openedx/venv/bin/activate && pip install -e /openedx/openedx-csv-user-import'
+# If there is no mount yet, copy then install from /openedx/... instead:
+# docker cp /path/to/openedx-csv-user-import tutor_local-lms-1:/openedx/openedx-csv-user-import
+# docker exec -u 0 tutor_local-lms-1 bash -c \
+#   'source /openedx/venv/bin/activate && pip install -e /openedx/openedx-csv-user-import'
 
-# 4) Migrate
+# 3) Migrate
 docker exec tutor_local-lms-1 bash -c \
   'cd /openedx/edx-platform && ./manage.py lms migrate openedx_csv_user_import --noinput'
 
-# 5) Restart LMS so the staff UI routes load
-docker restart tutor_local-lms-1
+# 4) Restart so Django reloads entry points / URLs
+docker restart tutor_local-lms-1 tutor_local-cms-1 \
+  tutor_local-lms-worker-1 tutor_local-cms-worker-1
 ```
 
-> After LMS restart, wait ~30–60s, then open `/csv-user-import/`.
+Wait ~30–60s after restart, then verify:
+
+```bash
+docker exec tutor_local-lms-1 bash -c \
+  'source /openedx/venv/bin/activate && pip show openedx-csv-user-import'
+
+docker exec tutor_local-lms-1 bash -c \
+  'cd /openedx/edx-platform && ./manage.py lms shell -c \
+   "from django.urls import reverse; print(reverse(\"csv_user_import:import\"))"'
+```
+
+If that prints `/csv-user-import/`, open the UI while logged in as staff.
 
 ---
 
@@ -305,10 +370,35 @@ tutor local start -d
 | Problem | Fix |
 |---|---|
 | `csv-user-import` not in `tutor plugins list` | Install with the same `pip`/venv that provides `tutor` |
-| UI 404 on `/csv-user-import/` | Plugin not installed in LMS image/container; rebuild or use Option B + restart LMS |
+| UI **Page not found** on `/csv-user-import/` | Tutor plugin enabled on host, but Django app **missing inside LMS**. Run Option B `pip install` in LMS (+ restart), or Option A image rebuild. See checklist below. |
+| Host shows plugin ✅ but LMS `ModuleNotFoundError: openedx_csv_user_import` | Mount alone is not enough — run `pip install -e /mnt/openedx-csv-user-import` inside LMS |
+| `NoReverseMatch: 'csv_user_import' is not a registered namespace` | Package not loaded by LMS; install + restart LMS |
+| 404 returns after `tutor images build` / recreate | Fast-path install was lost; use Option A so the package is baked into the image |
 | Password-reset emails not received | Check SMTP settings; test with `send_mail` above |
 | `course not found` during enroll | Use a real course id, e.g. `course-v1:OpenedX+DemoX+DemoCourse` |
-| Apache/default page instead of LMS/Studio | Ensure Windows hosts maps `local.edly.io` / `studio.local.edly.io` to `127.0.0.1` and Tutor Caddy owns port 80 |
+| Apache/default page instead of LMS/Studio | Ensure hosts maps LMS/Studio domains to the Tutor host and Caddy owns port 80 |
+
+### Diagnose a 404 on `/csv-user-import/`
+
+```bash
+# 1) Host plugin enabled?
+tutor plugins list | grep csv-user-import
+
+# 2) Mount visible inside LMS?
+docker exec tutor_local-lms-1 ls /mnt/openedx-csv-user-import
+
+# 3) Django package installed inside LMS?  (this is the usual failure)
+docker exec tutor_local-lms-1 bash -c \
+  'source /openedx/venv/bin/activate && pip show openedx-csv-user-import'
+
+# 4) URL registered?
+docker exec tutor_local-lms-1 bash -c \
+  'cd /openedx/edx-platform && ./manage.py lms shell -c \
+   "from django.urls import reverse; print(reverse(\"csv_user_import:import\"))"'
+```
+
+If step 3 fails → run Option B install + restart (or Option A rebuild).  
+If step 4 prints `/csv-user-import/` but the browser still 404s → hard-refresh / confirm you are on the LMS host (not Studio) and logged in as staff.
 
 ---
 
